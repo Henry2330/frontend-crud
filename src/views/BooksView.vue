@@ -59,7 +59,7 @@ import axios from 'axios'
 const books = ref([])
 const bookForm = ref({ id: '', title: '', author: '', year: '', price: '', stock: '', description: '' })
 const editing = ref(false)
-const API_URL = 'http://127.0.0.1:8000/books'
+const API_URL = 'https://backend-crud-lk7n.onrender.com/books'
 
 async function fetchBooks() {
   const res = await axios.get(API_URL)
