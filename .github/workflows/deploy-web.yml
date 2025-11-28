@@ -10,7 +10,7 @@ on:
 
 env:
   S3_BUCKET: "crud-books"
-  VITE_API_URL: "http://proyecto-cicd-dev-alb-925837977.us-east-1.elb.amazonaws.com"
+  VITE_API_URL: "https://d37iwcrb7wdn09.cloudfront.net"
 
 jobs:
   build:
