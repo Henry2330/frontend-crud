@@ -1,0 +1,95 @@
+name: CI branch Workflow
+
+on:
+  pull_request:
+    branches:
+      - "main"
+  push:
+    branches:
+      - "main"
+
+env:
+  S3_BUCKET: "crud-books"
+  VITE_API_URL: "http://proyecto-cicd-dev-alb-925837977.us-east-1.elb.amazonaws.com"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    strategy:
+      matrix:
+        node-version: [ 22.10.0 ]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+
+      - name: Add config to .npmrc file
+        run: echo "auto-install-peers=true" > ~/.npmrc
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build code
+        run: pnpm build
+        env:
+          VITE_API_URL: ${{ env.VITE_API_URL }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-west-1
+
+      - name: Get CloudFront Distribution ID from Terraform
+        id: terraform-output
+        run: |
+          cd terraform
+          terraform init
+          CLOUDFRONT_ID=$(terraform output -raw cloudfront_distribution_id)
+          echo "cloudfront_id=$CLOUDFRONT_ID" >> $GITHUB_OUTPUT
+          echo "CloudFront Distribution ID: $CLOUDFRONT_ID"
+
+      - name: Validate AWS Secrets
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+            echo "Error: AWS_ACCESS_KEY_ID secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "Error: AWS_SECRET_ACCESS_KEY secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ env.S3_BUCKET }}" ]; then
+            echo "Error: S3_BUCKET secret is not set"
+            exit 1
+          fi
+          echo "All required secrets are configured"
+
+      - name: Deploy to S3
+        run: |
+          echo "Deploying to bucket: ${{ env.S3_BUCKET }}"
+          aws s3 rm s3://${{ env.S3_BUCKET }} --recursive
+          aws s3 cp ./dist s3://${{ env.S3_BUCKET }} --recursive
+
+      - name: Invalidate CloudFront Cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ steps.terraform-output.outputs.cloudfront_id }} \
+            --paths "/*"
